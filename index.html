@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>ForceSense — Smart Wrist Roller Chatbot</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: Inter, Arial, sans-serif; background:#f3f7fb; margin:0; display:flex; justify-content:center; padding:28px; }
+    .container { width: 920px; background:white; border-radius:12px; box-shadow:0 8px 30px rgba(10,20,40,0.08); padding:18px; }
+    h1 { margin:0 0 12px 0; color:#0b3b6f; text-align:center; }
+    .grid { display:grid; grid-template-columns: 340px 1fr; gap:16px; align-items:start; }
+
+    .card { background:#fbfdff; padding:12px; border-radius:8px; border:1px solid #e6f2fb; }
+    label { display:block; margin-top:8px; font-size:13px; color:#233; }
+    input[type="text"], input[type="number"], select { width:100%; padding:8px 10px; margin-top:6px; border-radius:6px; border:1px solid #cfdde8; box-sizing:border-box; }
+    button.primary { margin-top:12px; width:100%; padding:10px; background:#0b82e6; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:600; }
+    button.primary:hover{ background:#096ec7; }
+
+    #chatbox { height: 460px; border-radius:8px; background:#f7fbff; padding:12px; overflow-y:auto; border:1px solid #e6f2fb; }
+    .msg { max-width:82%; padding:10px 12px; border-radius:10px; margin:8px 0; line-height:1.4; word-wrap:break-word; }
+    .user { margin-left:auto; background:#e6eefc; color:#0b3b6f; text-align:right; }
+    .bot { background:#0b82e6; color:white; text-align:left; }
+
+    .bottom { display:flex; gap:8px; margin-top:12px; }
+    #input { flex:1; padding:10px; border-radius:8px; border:1px solid #cfdde8; }
+    #sendBtn { padding:10px 16px; background:#0b82e6; color:white; border:none; border-radius:8px; cursor:pointer; }
+
+    small.hint { color:#556; display:block; margin-top:6px; }
+
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>ForceSense — Smart Wrist Roller</h1>
+    <div class="grid">
+      <!-- LEFT: structured form -->
+      <div class="card">
+        <label>Exercise</label>
+        <select id="exercise">
+          <option value="wrist_curl">wrist_curl (Wrist Roller)</option>
+          <option value="bench_press">bench_press</option>
+          <option value="squat">squat</option>
+          <option value="deadlift">deadlift</option>
+          <option value="overhead_press">overhead_press</option>
+          <option value="barbell_row">barbell_row</option>
+        </select>
+
+        <label>Sets</label>
+        <input id="sets" type="number" min="1" value="4" />
+
+        <label>Reps</label>
+        <input id="reps" type="number" min="1" value="8" />
+
+        <label>Working weight / resistance (kg-equivalent)</label>
+        <input id="weight" type="number" step="0.5" value="6" />
+
+        <label>RPE (1-10)</label>
+        <input id="rpe" type="number" step="0.1" min="1" max="10" value="7.5" />
+
+        <label>User ID (optional)</label>
+        <input id="user_id" type="number" min="1" value="1" />
+
+        <button class="primary" id="recommendBtn">Get Recommendation</button>
+        <small class="hint">Tip: For wrist roller start with lighter resistance (4–8 kg-equivalent) and monitor RPE.</small>
+      </div>
+
+      <!-- RIGHT: chat area -->
+      <div>
+        <div id="chatbox"></div>
+
+        <div class="bottom">
+          <input id="input" placeholder="Ask about wrist roller, MR damper, rehab tips..." />
+          <button id="sendBtn">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const chatbox = document.getElementById('chatbox');
+  const input = document.getElementById('input');
+  const sendBtn = document.getElementById('sendBtn');
+  const recommendBtn = document.getElementById('recommendBtn');
+
+  function appendMessage(text, who='bot') {
+    const d = document.createElement('div');
+    d.className = 'msg ' + (who === 'user' ? 'user' : 'bot');
+    let html = (text || '')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      .replace(/\n/g, '<br>');
+    d.innerHTML = html;
+    chatbox.appendChild(d);
+    chatbox.scrollTop = chatbox.scrollHeight;
+  }
+
+  async function sendChat() {
+    const t = input.value.trim();
+    if (!t) return;
+    appendMessage(t, 'user');
+    input.value = '';
+    try {
+      const res = await fetch('/chat', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({text: t})
+      });
+      const data = await res.json();
+      appendMessage(data.reply || 'No reply.');
+    } catch (err) {
+      appendMessage('Error: ' + err.message);
+    }
+  }
+
+  async function getRecommendation() {
+    const exercise = document.getElementById('exercise').value;
+    const sets = Number(document.getElementById('sets').value) || 3;
+    const reps = Number(document.getElementById('reps').value) || 8;
+    const weight = Number(document.getElementById('weight').value) || 0;
+    const rpe = Number(document.getElementById('rpe').value) || 7;
+    const user_id = Number(document.getElementById('user_id').value) || 1;
+    const volume = weight * reps * sets;
+
+    // show user message
+    appendMessage(`${exercise} — ${sets}x${reps} @ ${weight}kg (RPE ${rpe})`, 'user');
+
+    const payload = {
+      user_id: user_id,
+      exercise: exercise,
+      last_session: {sets, reps, weight, rpe, volume}
+    };
+
+    try {
+      const res = await fetch('/analyze_session', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.error) {
+        appendMessage('Error: ' + data.error);
+        return;
+      }
+      let reply = data.message || `Predicted next: ${data.predicted_next_weight} kg`;
+      if (data.alternatives && data.alternatives.length) {
+        reply += "<br><br><strong>Accessory / alternative exercises:</strong><br>" + data.alternatives.join(', ');
+      }
+      appendMessage(reply, 'bot');
+    } catch (err) {
+      appendMessage('Error: ' + err.message);
+    }
+  }
+
+  sendBtn.addEventListener('click', sendChat);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
+  recommendBtn.addEventListener('click', getRecommendation);
+
+  // welcome message
+  appendMessage("Welcome to ForceSense — use the left form for structured wrist-roller recommendations, or ask general questions (e.g., 'How does MR damper work?').", 'bot');
+</script>
+</body>
+</html>
